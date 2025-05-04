@@ -61,11 +61,15 @@ The SQL MCP integration works by:
 
 ## Usage
 
-1. Start Claude with MCP support:
+1. Start Claude:
 
 ```bash
-claude mcp
+claude
 ```
+
+You can also:
+- Check MCP status: `claude /mcp`
+- Debug MCP: `claude --mcp-debug`
 
 2. Ask Claude questions about your database:
 
@@ -139,7 +143,6 @@ To distribute this SQL MCP integration to your team:
    - Make the scripts executable: `chmod +x *.sh`
    - Run the installation script: `./install_sql_mcp.sh`
    - Follow the prompts to enter their SQL Server details
-   - Start using Claude with: `claude mcp`
 
 ## Credits
 
