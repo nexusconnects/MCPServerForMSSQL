@@ -18,6 +18,7 @@ The SQL MCP integration works by:
 - **Protocol Support**: Works with Claude's MCP system
 - **Cross-Platform**: Works on macOS and Linux consistently
 - **Easy Installation**: One-step installation process
+- **Smart Configuration**: Preserves existing MCP settings when adding SQL support
 
 ## Installation
 

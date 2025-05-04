@@ -493,7 +493,42 @@ echo -e "${YELLOW}Updating MCP configuration at $MCP_JSON${NC}"
 # Get absolute path to the project directory
 ABSOLUTE_PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
-cat > "$MCP_JSON" << EOF
+# Check if .mcp.json already exists
+if [ -f "$MCP_JSON" ]; then
+    echo -e "${YELLOW}Existing .mcp.json found. Adding SQL MCP configuration...${NC}"
+    
+    # Create a temporary file for our SQL config
+    TMP_SQL_CONFIG="/tmp/sql_mcp_config_$$.json"
+    cat > "$TMP_SQL_CONFIG" << EOF
+{
+  "sql": {
+    "type": "stdio",
+    "command": "$ABSOLUTE_PROJECT_DIR/run_simple_sql.sh",
+    "args": [],
+    "env": {},
+    "settings": {
+      "mcp_timeout": 60000,
+      "mcp_tool_timeout": 120000
+    }
+  }
+}
+EOF
+    
+    # Check if jq is available
+    if command -v jq > /dev/null 2>&1; then
+        echo -e "${YELLOW}Using jq to merge configurations...${NC}"
+        # Use jq to merge the configurations
+        # This reads the existing mcpServers object, merges our SQL config, and keeps all other properties
+        jq --argjson sqlconfig "$(cat "$TMP_SQL_CONFIG")" '.mcpServers |= . + $sqlconfig' "$MCP_JSON" > "${MCP_JSON}.tmp"
+        mv "${MCP_JSON}.tmp" "$MCP_JSON"
+    else
+        echo -e "${YELLOW}jq not found. Using basic merge strategy...${NC}"
+        # Simple strategy - backup existing file and inform user
+        cp "$MCP_JSON" "${MCP_JSON}.backup"
+        echo -e "${YELLOW}Backed up existing .mcp.json to ${MCP_JSON}.backup${NC}"
+        
+        # Create new file with our SQL config
+        cat > "$MCP_JSON" << EOF
 {
   "mcpServers": {
     "sql": {
@@ -509,6 +544,32 @@ cat > "$MCP_JSON" << EOF
   }
 }
 EOF
+        echo -e "${YELLOW}Note: Your existing MCP configuration was backed up but not merged.${NC}"
+        echo -e "${YELLOW}If you had other MCP servers configured, you'll need to manually merge them from ${MCP_JSON}.backup${NC}"
+    fi
+    
+    # Clean up temp file
+    rm -f "$TMP_SQL_CONFIG"
+else
+    echo -e "${YELLOW}No existing .mcp.json found. Creating new file...${NC}"
+    # Create a new .mcp.json file with just our SQL config
+    cat > "$MCP_JSON" << EOF
+{
+  "mcpServers": {
+    "sql": {
+      "type": "stdio",
+      "command": "$ABSOLUTE_PROJECT_DIR/run_simple_sql.sh",
+      "args": [],
+      "env": {},
+      "settings": {
+        "mcp_timeout": 60000,
+        "mcp_tool_timeout": 120000
+      }
+    }
+  }
+}
+EOF
+fi
 
 # Create the CLAUDE.md help file
 CLAUDE_MD="$PROJECT_DIR/CLAUDE.md"
