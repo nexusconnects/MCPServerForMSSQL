@@ -28,7 +28,7 @@ The SQL MCP integration works by:
 - Python 3.7+
 - FreeTDS (installed automatically on macOS via Homebrew)
 - Claude CLI (install from [claude.ai/docs/installation](https://claude.ai/docs/installation))
-- SQL Server credentials with appropriate permissions
+- SQL Server credentials with appropriate permissions (preferably read-only, see [Security Caution](#-security-caution))
 
 ### Installation Steps
 
@@ -83,6 +83,17 @@ SELECT TOP 5 * FROM YourTable
 @sql execute_sql
 SELECT COUNT(*) FROM Users WHERE IsActive = 1
 ```
+
+## ⚠️ Security Caution
+
+**Important:** For security reasons, use a database account with **restricted permissions**:
+
+- Create a dedicated read-only user for Claude's database access
+- Avoid using accounts with DROP, DELETE, or table creation privileges
+- Never use sa or admin accounts in production environments
+- Consider restricting access to only specific tables/views needed for analysis
+
+Using overly privileged accounts could result in accidental data loss or database structure changes when Claude generates SQL queries based on natural language requests.
 
 ## Best Practices for Prompting Claude
 
