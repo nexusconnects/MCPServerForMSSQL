@@ -571,41 +571,71 @@ else
 EOF
 fi
 
-# Create the CLAUDE.md help file
+# Handle the CLAUDE.md help file
 CLAUDE_MD="$PROJECT_DIR/CLAUDE.md"
-echo -e "${YELLOW}Creating CLAUDE.md help file${NC}"
 
 # Get absolute path to the project directory for CLAUDE.md
 PROJECT_PATH="$(cd "$PROJECT_DIR" && pwd)"
 
-cat > "$CLAUDE_MD" << EOF
-# Instructions for Claude
-
-## SQL Query Execution
+# SQL instructions to add to CLAUDE.md
+SQL_INSTRUCTIONS=$(cat << 'EOF'
+# SQL Query Execution with MCP
 
 To execute SQL queries:
 
 1. Use the MCP SQL integration:
-   \`\`\`
+   ```
    @sql execute_sql
    SELECT * FROM YourTable
-   \`\`\`
+   ```
 
 2. If the above doesn't work, use the run_simple_sql.sh script directly:
-   \`\`\`bash
-   cd $PROJECT_PATH
+   ```bash
+   cd PROJECT_PATH
    ./run_simple_sql.sh "YOUR SQL QUERY"
-   \`\`\`
+   ```
 
-## Important Notes
+## SQL MCP Important Notes
 
 - The SQL connection works correctly even if Claude shows "Connection failed" or "Connection closed" messages
 - Use the simple_sql.py script via run_simple_sql.sh for the most reliable results
 - Keep it simple and use the working scripts directly
 - Do not try to implement complex MCP protocol handling from scratch
 EOF
+)
 
-echo -e "${GREEN}Created CLAUDE.md help file${NC}"
+# Replace placeholder with actual path
+SQL_INSTRUCTIONS="${SQL_INSTRUCTIONS//PROJECT_PATH/$PROJECT_PATH}"
+
+# Check if the file exists
+if [ -f "$CLAUDE_MD" ]; then
+    echo -e "${YELLOW}Appending SQL instructions to existing CLAUDE.md file...${NC}"
+    
+    # Check if SQL section already exists to avoid duplication
+    if grep -q "SQL Query Execution with MCP" "$CLAUDE_MD"; then
+        echo -e "${YELLOW}SQL instructions already present in CLAUDE.md. Skipping...${NC}"
+    else
+        # Create a backup just in case
+        cp "$CLAUDE_MD" "${CLAUDE_MD}.backup"
+        echo -e "${YELLOW}Created backup at ${CLAUDE_MD}.backup${NC}"
+        
+        # Append our instructions to the file
+        echo -e "\n\n$SQL_INSTRUCTIONS" >> "$CLAUDE_MD"
+        echo -e "${GREEN}Appended SQL instructions to CLAUDE.md${NC}"
+    fi
+else
+    echo -e "${YELLOW}Creating new CLAUDE.md help file...${NC}"
+    
+    # Create new file with generic header and our SQL instructions
+    cat > "$CLAUDE_MD" << EOF
+# Instructions for Claude
+
+This file contains instructions for Claude on how to use the available tools and integrations.
+
+$SQL_INSTRUCTIONS
+EOF
+    echo -e "${GREEN}Created CLAUDE.md help file${NC}"
+fi
 
 # Configure FreeTDS if needed
 configure_freetds() {
