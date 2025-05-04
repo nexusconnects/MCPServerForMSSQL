@@ -577,8 +577,8 @@ CLAUDE_MD="$PROJECT_DIR/CLAUDE.md"
 # Get absolute path to the project directory for CLAUDE.md
 PROJECT_PATH="$(cd "$PROJECT_DIR" && pwd)"
 
-# SQL instructions to add to CLAUDE.md
-SQL_INSTRUCTIONS=$(cat << 'EOF'
+# Create SQL instructions to add to CLAUDE.md
+cat > /tmp/sql_instructions_$$.md << 'EOFMARKER'
 # SQL Query Execution with MCP
 
 To execute SQL queries:
@@ -601,11 +601,16 @@ To execute SQL queries:
 - Use the simple_sql.py script via run_simple_sql.sh for the most reliable results
 - Keep it simple and use the working scripts directly
 - Do not try to implement complex MCP protocol handling from scratch
-EOF
-)
+EOFMARKER
+
+# Read the temp file content into a variable
+SQL_INSTRUCTIONS=$(cat /tmp/sql_instructions_$$.md)
 
 # Replace placeholder with actual path
 SQL_INSTRUCTIONS="${SQL_INSTRUCTIONS//PROJECT_PATH/$PROJECT_PATH}"
+
+# Clean up temp file
+rm -f /tmp/sql_instructions_$$.md
 
 # Check if the file exists
 if [ -f "$CLAUDE_MD" ]; then
