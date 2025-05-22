@@ -11,6 +11,8 @@ The SQL MCP integration works by:
 3. Translating Claude's natural language requests into SQL queries
 4. Returning the query results back to Claude for interpretation and presentation
 
+**Important Protocol Note**: This integration uses Claude's required MCP protocol version "2025-03-26" for compatibility. The integration includes a fixed MCP implementation that handles the protocol correctly, including proper JSON-RPC format and Content-Length headers.
+
 ## Key Features
 
 - **No ODBC Required**: Uses pymssql to connect directly to SQL Server
@@ -137,11 +139,28 @@ claude mcp list
 
 4. If you see "Connection failed" or "Connection closed" messages but queries still work, this is normal behavior and can be ignored.
 
+5. Protocol version compatibility: This installation uses protocol version "2025-03-26" which is required for Claude's MCP. If you encounter MCP transport closed errors, check that the protocol version hasn't changed.
+
+6. JSON-RPC format: Claude's MCP requires proper JSON-RPC format with non-null IDs and Content-Length headers. The installation script configures this correctly.
+
+## MCP Tools Exposed
+
+The MCP server exposes the following tools to Claude:
+
+### `execute_sql`
+- **Description**: Execute SQL queries on the connected database
+- **Input Schema**: 
+  - `query` (string, required): The SQL query to execute
+- **Usage**: Use `@sql execute_sql` in Claude followed by your SQL query
+- **Returns**: JSON object with query results, row count, and success status
+
 ## Files and Components
 
 Created during installation:
 - `simple_sql.py` - Python script that handles SQL queries directly
 - `run_simple_sql.sh` - Wrapper script that invokes the Python script
+- `mcp_fixed.py` - MCP protocol implementation with proper tool exposure
+- `run_mcp_fixed.sh` - Wrapper script for the MCP server
 - `.mcp.json` - Configuration file for the MCP server
 - `CLAUDE.md` - Instructions for Claude on how to use the SQL integration
 
@@ -155,6 +174,18 @@ To distribute this SQL MCP integration to your team:
    - Make the scripts executable: `chmod +x *.sh`
    - Run the installation script: `./install_sql_mcp.sh`
    - Follow the prompts to enter their SQL Server details
+   
+### Latest Updates (May 2024)
+
+The installation script has been updated with these important fixes:
+
+1. Fixed MCP protocol version to "2025-03-26" (previously "2024-11-05") to match Claude's requirements
+2. Added improved MCP implementation that properly handles JSON-RPC format
+3. Properly handles Content-Length headers in MCP communication
+4. Fixed notification handling in the protocol
+5. Added continuous loop for persistent MCP connections
+6. Improved error handling and debugging logs
+7. **NEW: Exposed SQL tools through MCP protocol** - The MCP server now properly exposes the `execute_sql` tool through the `tools/list` and `tools/call` methods, making it compatible with Claude's tool discovery and execution system
 
 ## Credits
 

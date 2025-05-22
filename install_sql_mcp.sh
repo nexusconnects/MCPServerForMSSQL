@@ -321,7 +321,7 @@ def handle_jsonrpc_request(request):
                     "name": "sql-agent",
                     "version": "1.0.0"
                 },
-                "protocolVersion": params.get("protocolVersion", "2024-11-05")
+                "protocolVersion": params.get("protocolVersion", "2025-03-26")
             }
         }
     
@@ -483,6 +483,317 @@ else
 fi
 EOF
 
+# Create the MCP fixed script for Claude MCP protocol compatibility
+MCP_FIXED_SCRIPT="$PROJECT_DIR/mcp_fixed.py"
+echo -e "${YELLOW}Creating MCP fixed script at $MCP_FIXED_SCRIPT${NC}"
+
+cat > "$MCP_FIXED_SCRIPT" << 'EOF'
+#!/usr/bin/env python3
+# MCP SQL connector with exact format matching for Claude's MCP protocol
+
+import sys
+import os
+import json
+import pymssql
+from datetime import datetime
+
+def log(message):
+    """Log to stderr for debugging"""
+    sys.stderr.write(f"{message}\n")
+    sys.stderr.flush()
+
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+def execute_sql(query):
+    """Execute SQL query"""
+    try:
+        log(f"Executing SQL: {query[:100]}")
+        
+        # Get connection details from environment variables
+        conn = pymssql.connect(
+            server=os.environ.get("MSSQL_SERVER", "localhost"),
+            port=int(os.environ.get("MSSQL_PORT", "1433")),
+            user=os.environ.get("MSSQL_USER", "sa"),
+            password=os.environ.get("MSSQL_PASSWORD", ""),
+            database=os.environ.get("MSSQL_DATABASE", "master")
+        )
+        
+        cursor = conn.cursor(as_dict=True)
+        cursor.execute(query)
+        
+        # Get results
+        try:
+            rows = cursor.fetchall()
+            
+            # Process rows for JSON serialization
+            processed_rows = []
+            for row in rows:
+                processed_row = {}
+                for key, value in row.items():
+                    if isinstance(value, datetime):
+                        processed_row[key] = value.isoformat()
+                    else:
+                        processed_row[key] = value
+                processed_rows.append(processed_row)
+            
+            result = {
+                "success": True,
+                "rows": processed_rows,
+                "rowCount": len(processed_rows)
+            }
+            log(f"Query returned {len(processed_rows)} rows")
+        except Exception as e:
+            result = {
+                "success": True,
+                "rows": [],
+                "rowCount": cursor.rowcount
+            }
+            log(f"Non-SELECT query affected {cursor.rowcount} rows")
+        
+        # Close connection
+        conn.close()
+        return result
+    except Exception as e:
+        log(f"SQL Error: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def main():
+    log("Starting MCP Fixed SQL Server")
+    
+    while True:
+        try:
+            # Read line by line
+            line = sys.stdin.readline()
+            if not line:
+                continue
+                
+            line = line.strip()
+            if not line:
+                continue
+                
+            log(f"Received: {line}")
+            
+            try:
+                # Parse JSON request
+                request = json.loads(line)
+            except json.JSONDecodeError:
+                log(f"Failed to parse JSON: {line}")
+                continue
+            
+            # Get request details
+            method = request.get("method", "")
+            params = request.get("params", {})
+            request_id = request.get("id")
+            jsonrpc = request.get("jsonrpc", "2.0")
+            
+            # Initialize method
+            if method == "initialize":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "capabilities": {
+                            "tools": {}
+                        },
+                        "serverInfo": {
+                            "name": "sql-agent",
+                            "version": "1.0.0"
+                        },
+                        "protocolVersion": "2025-03-26"
+                    }
+                }
+                print(json.dumps(response, default=json_serial))
+                sys.stdout.flush()
+                log(f"Sent initialize response for id {request_id}")
+            
+            # Tools list method
+            elif method == "tools/list":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "tools": [
+                            {
+                                "name": "execute_sql",
+                                "description": "Execute SQL queries on the connected database",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "query": {
+                                            "type": "string",
+                                            "description": "The SQL query to execute"
+                                        }
+                                    },
+                                    "required": ["query"]
+                                }
+                            }
+                        ]
+                    }
+                }
+                print(json.dumps(response, default=json_serial))
+                sys.stdout.flush()
+                log(f"Sent tools/list response for id {request_id}")
+            
+            # Tools call method  
+            elif method == "tools/call":
+                tool_name = params.get("name", "")
+                arguments = params.get("arguments", {})
+                
+                if tool_name == "execute_sql":
+                    query = arguments.get("query", "")
+                    if not query:
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Invalid params: query is required"
+                            }
+                        }
+                    else:
+                        result = execute_sql(query)
+                        response = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(result, default=json_serial)
+                                    }
+                                ]
+                            }
+                        }
+                else:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"Unknown tool: {tool_name}"
+                        }
+                    }
+                
+                print(json.dumps(response, default=json_serial))
+                sys.stdout.flush()
+                log(f"Sent tools/call response for id {request_id}")
+            
+            # SQL execute method
+            elif method == "execute_sql":
+                query = ""
+                if isinstance(params, dict):
+                    query = params.get("query", "")
+                elif isinstance(params, str):
+                    query = params
+                
+                if not query:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32602,
+                            "message": "Invalid params: query is required"
+                        }
+                    }
+                else:
+                    result = execute_sql(query)
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "result": result
+                    }
+                
+                print(json.dumps(response, default=json_serial))
+                sys.stdout.flush()
+                log(f"Sent response for execute_sql id {request_id}")
+            
+            # Shutdown method
+            elif method == "shutdown":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": None
+                }
+                print(json.dumps(response, default=json_serial))
+                sys.stdout.flush()
+                log("Sent shutdown response")
+                break
+            
+            # Handle notifications (no response needed)
+            elif method.startswith("notifications/"):
+                log(f"Received notification: {method}")
+                # Don't send a response for notifications
+            
+            # Unknown method
+            elif method:
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {
+                        "code": -32601,
+                        "message": f"Method not found: {method}"
+                    }
+                }
+                print(json.dumps(response, default=json_serial))
+                sys.stdout.flush()
+                log(f"Sent error for unknown method: {method}")
+            
+        except Exception as e:
+            log(f"Error in main loop: {str(e)}")
+            # Don't exit, continue processing
+
+if __name__ == "__main__":
+    main()
+EOF
+
+chmod +x "$MCP_FIXED_SCRIPT"
+
+# Create the MCP fixed wrapper script
+MCP_FIXED_RUN_SCRIPT="$PROJECT_DIR/run_mcp_fixed.sh"
+echo -e "${YELLOW}Creating MCP fixed wrapper script at $MCP_FIXED_RUN_SCRIPT${NC}"
+
+cat > "$MCP_FIXED_RUN_SCRIPT" << EOF
+#!/bin/bash
+# Run the fixed MCP SQL server
+
+# Set working directory
+cd "\$(dirname "\$0")"
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Set SQL Server environment variables
+export MSSQL_SERVER="$SQL_SERVER"
+export MSSQL_PORT="$SQL_PORT"
+export MSSQL_DATABASE="$SQL_DATABASE"
+export MSSQL_USER="$SQL_USER"
+export MSSQL_PASSWORD="$SQL_PASSWORD"
+export MSSQL_TRUST_SERVER_CERTIFICATE="$TRUST_SERVER_CERT"
+
+# Set library path for FreeTDS on macOS
+if [[ "\$OSTYPE" == "darwin"* ]]; then
+    if command -v brew >/dev/null 2>&1 && brew list freetds &>/dev/null; then
+        FREETDS_DIR=\$(brew --prefix freetds)
+        export DYLD_LIBRARY_PATH="\$FREETDS_DIR/lib:\$DYLD_LIBRARY_PATH"
+    fi
+fi
+
+# Unbuffer Python output
+export PYTHONUNBUFFERED=1
+
+# Run the fixed MCP script with debug logging
+python mcp_fixed.py 2>/tmp/mcp_fixed_debug.log
+EOF
+
+chmod +x "$MCP_FIXED_RUN_SCRIPT"
+
 chmod +x "$RUN_SCRIPT"
 echo -e "${GREEN}Made wrapper script executable${NC}"
 
@@ -503,7 +814,7 @@ if [ -f "$MCP_JSON" ]; then
 {
   "sql": {
     "type": "stdio",
-    "command": "$ABSOLUTE_PROJECT_DIR/run_simple_sql.sh",
+    "command": "$ABSOLUTE_PROJECT_DIR/run_mcp_fixed.sh",
     "args": [],
     "env": {},
     "settings": {
@@ -533,7 +844,7 @@ EOF
   "mcpServers": {
     "sql": {
       "type": "stdio",
-      "command": "$ABSOLUTE_PROJECT_DIR/run_simple_sql.sh",
+      "command": "$ABSOLUTE_PROJECT_DIR/run_mcp_fixed.sh",
       "args": [],
       "env": {},
       "settings": {
@@ -558,7 +869,7 @@ else
   "mcpServers": {
     "sql": {
       "type": "stdio",
-      "command": "$ABSOLUTE_PROJECT_DIR/run_simple_sql.sh",
+      "command": "$ABSOLUTE_PROJECT_DIR/run_mcp_fixed.sh",
       "args": [],
       "env": {},
       "settings": {
@@ -1035,7 +1346,7 @@ def handle_jsonrpc_request(request):
                     "name": "sql-agent",
                     "version": "1.0.0"
                 },
-                "protocolVersion": params.get("protocolVersion", "2024-11-05")
+                "protocolVersion": params.get("protocolVersion", "2025-03-26")
             }
         }
     
