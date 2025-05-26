@@ -247,6 +247,7 @@ def execute_sql(query):
         # Connect to the database using environment variables or defaults
         conn = pymssql.connect(
             server=os.environ.get("MSSQL_SERVER", "your_server"),
+            port=int(os.environ.get("MSSQL_PORT", "1433")),
             user=os.environ.get("MSSQL_USER", "your_username"),
             password=os.environ.get("MSSQL_PASSWORD", "your_password"),
             database=os.environ.get("MSSQL_DATABASE", "your_database")
@@ -1059,8 +1060,9 @@ from datetime import datetime
 __version__ = '0.1.0'
 
 class Connection:
-    def __init__(self, server=None, user=None, password=None, database=None):
+    def __init__(self, server=None, user=None, password=None, database=None, port=None):
         self.server = server
+        self.port = port
         self.user = user
         self.password = password
         self.database = database
@@ -1089,8 +1091,8 @@ class Cursor:
     def fetchall(self):
         return self.results
 
-def connect(server=None, user=None, password=None, database=None, **kwargs):
-    return Connection(server, user, password, database)
+def connect(server=None, user=None, password=None, database=None, port=None, **kwargs):
+    return Connection(server, user, password, database, port)
 EOF
                 echo -e "${GREEN}Created simple pymssql wrapper (for testing only)${NC}"
                 echo -e "${YELLOW}NOTE: This wrapper does not actually connect to SQL Server!${NC}"
@@ -1223,13 +1225,14 @@ def serialize_datetime(obj):
     raise TypeError(f"Type {type(obj)} not serializable")
 
 class MockConnection:
-    def __init__(self, server=None, user=None, password=None, database=None):
+    def __init__(self, server=None, user=None, password=None, database=None, port=None):
         self.server = server
+        self.port = port
         self.user = user
         self.password = password
         self.database = database
         self.connected = True
-        print(f"Mock connection to {server}/{database} as {user}")
+        print(f"Mock connection to {server}:{port}/{database} as {user}")
         
     def cursor(self, as_dict=False):
         return MockCursor(self, as_dict)
@@ -1276,10 +1279,11 @@ class MockPymssql:
     def __init__(self):
         self.__version__ = __version__
         
-    def connect(self, server=None, user=None, password=None, database=None, **kwargs):
+    def connect(self, server=None, user=None, password=None, database=None, port=None, **kwargs):
         """Creates a mock database connection"""
         return MockConnection(
             server=server or os.environ.get("MSSQL_SERVER", "your_server"),
+            port=port or int(os.environ.get("MSSQL_PORT", "1433")),
             user=user or os.environ.get("MSSQL_USER", "your_username"),
             password=password or os.environ.get("MSSQL_PASSWORD", "your_password"),
             database=database or os.environ.get("MSSQL_DATABASE", "your_database")
