@@ -2,6 +2,8 @@
 
 This repository contains the SQL Server MCP (Model Context Protocol) integration for Claude. This integration allows Claude to directly query and analyze data from your SQL Server database using natural language.
 
+**This MCP server is certified with MCP Review**: https://mcpreview.com/mcp-servers/shakunvohradeltek/mcpserverformssql
+
 ## Overview
 
 The SQL MCP integration works by:
